@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Circle, Cpu, Sun, Moon } from 'lucide-react';
+import { Circle, Cpu, Sun, Moon, Menu } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useI18n } from '../i18n';
 
@@ -13,6 +13,8 @@ export function Header() {
   const locale = useStore((s) => s.locale);
   const toggleTheme = useStore((s) => s.toggleTheme);
   const toggleLocale = useStore((s) => s.toggleLocale);
+  const toggleMobileSidebar = useStore((s) => s.toggleMobileSidebar);
+  const hasFiles = files.length > 0;
   const workerCount = useMemo(
     () => Math.max(1, navigator.hardwareConcurrency - 1 || 3),
     []
@@ -49,7 +51,19 @@ export function Header() {
         </h1>
       </div>
 
-      <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+      <div className="flex items-center gap-2 md:gap-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        {/* Mobile menu button */}
+        {hasFiles && (
+          <button
+            onClick={toggleMobileSidebar}
+            className="w-7 h-7 rounded-md flex items-center justify-center cursor-pointer md:hidden"
+            style={{ background: 'var(--color-bg-raised)' }}
+            aria-label="Toggle menu"
+          >
+            <Menu size={14} style={{ color: 'var(--color-accent)' }} />
+          </button>
+        )}
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
@@ -79,7 +93,7 @@ export function Header() {
 
         <div className="w-px h-4" style={{ background: 'var(--color-border)' }} />
 
-        <div className="flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2">
           <Cpu size={13} />
           <span>{workerCount} {t('header.workers')}</span>
         </div>

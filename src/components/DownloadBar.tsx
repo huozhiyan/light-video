@@ -18,7 +18,7 @@ export function DownloadBar() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3, duration: 0.4 }}
-      className="mt-8 p-4 rounded-xl flex items-center justify-between"
+      className="mt-8 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-0 justify-between"
       style={{ background: 'var(--color-bg-surface)', border: `1px solid var(--color-border)` }}
     >
       <div>

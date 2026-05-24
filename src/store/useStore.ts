@@ -82,6 +82,10 @@ interface AppStore {
   theme: 'dark' | 'light';
   locale: 'zh' | 'en';
   toggleTheme: () => void;
+
+  mobileSidebarOpen: boolean;
+  toggleMobileSidebar: () => void;
+  closeMobileSidebar: () => void;
   toggleLocale: () => void;
 }
 
@@ -329,6 +333,10 @@ export const useStore = create<AppStore>((set, get) => ({
       localStorage.setItem('lightvideo-locale', next);
       return { locale: next };
     }),
+
+  mobileSidebarOpen: false,
+  toggleMobileSidebar: () => set((s) => ({ mobileSidebarOpen: !s.mobileSidebarOpen })),
+  closeMobileSidebar: () => set({ mobileSidebarOpen: false }),
 }));
 
 async function generateVideoThumbnail(file: File): Promise<string | null> {

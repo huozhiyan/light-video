@@ -35,7 +35,7 @@ export function FileGrid() {
 
       <div {...getRootProps()} className="relative">
         <input {...getInputProps()} />
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
           <AnimatePresence>
             {files.map((file, i) => (
               <FileCard key={file.id} file={file} index={i} />

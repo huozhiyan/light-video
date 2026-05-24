@@ -71,16 +71,16 @@ export function GuidePanel() {
       variants={container}
       initial="hidden"
       animate="show"
-      className="max-w-3xl w-full mt-6 pb-8"
+      className="max-w-3xl w-full mt-4 md:mt-6 pb-8"
     >
       {/* Divider above guide */}
       <motion.div
         variants={item}
-        className="flex items-center gap-4 mb-14"
+        className="flex items-center gap-3 md:gap-4 mb-10 md:mb-14"
       >
         <div className="flex-1 h-px" style={{ background: 'var(--color-border)' }} />
         <h2
-          className="text-xl tracking-wide shrink-0"
+          className="text-lg md:text-xl tracking-wide shrink-0"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--color-text-primary)' }}
         >
           {t('guide.title')}
@@ -98,14 +98,14 @@ export function GuidePanel() {
       </motion.p>
 
       {/* Feature grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8">
         {sections.map((section) => {
           const SectionIcon = section.icon;
           return (
             <motion.div
               key={section.title}
               variants={item}
-              className="rounded-xl p-7 transition-shadow duration-300 hover:shadow-lg"
+              className="rounded-xl p-5 md:p-7 transition-shadow duration-300 hover:shadow-lg"
               style={{
                 background: 'var(--color-bg-surface)',
                 border: '1px solid var(--color-border)',

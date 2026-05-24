@@ -7,13 +7,18 @@ import { ProgressPanel } from './components/ProgressPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { GuidePanel } from './components/GuidePanel';
 import { ToastContainer } from './components/Toast';
+import { useI18n } from './i18n';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Sliders } from 'lucide-react';
 
 export default function App() {
+  const { t } = useI18n();
   const activeView = useStore((s) => s.activeView);
   const hasFiles = useStore((s) => s.files.length > 0);
+  const isProcessing = useStore((s) => s.isProcessing);
   const mobileSidebarOpen = useStore((s) => s.mobileSidebarOpen);
   const closeMobileSidebar = useStore((s) => s.closeMobileSidebar);
+  const toggleMobileSidebar = useStore((s) => s.toggleMobileSidebar);
 
   return (
     <div className="h-full flex flex-col relative z-10">
@@ -51,7 +56,7 @@ export default function App() {
         <main className="flex-1 overflow-y-auto relative">
           <div className="scanlines" />
           {(activeView === 'dropzone' || activeView === 'files') && (
-            <div className={hasFiles ? 'min-h-full p-4 md:p-8 pb-16' : 'min-h-full flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-8'}>
+            <div className={hasFiles ? 'min-h-full p-4 md:p-8 pb-24 md:pb-16' : 'min-h-full flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-8'}>
               <div className={hasFiles ? '' : 'w-full max-w-2xl'}>
                 <DropZone />
               </div>
@@ -63,6 +68,29 @@ export default function App() {
           {activeView === 'results' && <ResultPanel />}
         </main>
       </div>
+
+      {/* Mobile FAB — settings / start processing */}
+      <AnimatePresence>
+        {hasFiles && !isProcessing && !mobileSidebarOpen && (
+          <motion.button
+            initial={{ opacity: 0, y: 20, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.8 }}
+            onClick={toggleMobileSidebar}
+            className="fixed bottom-6 right-6 z-50 md:hidden flex items-center gap-2 px-5 py-3 rounded-full shadow-lg cursor-pointer"
+            style={{
+              background: 'var(--color-accent)',
+              color: '#0C0C0E',
+              fontFamily: 'var(--font-mono)',
+              boxShadow: '0 4px 24px rgba(244,157,55,0.35)',
+            }}
+          >
+            <Sliders size={18} />
+            <span className="text-sm font-medium">{t('sidebar.start')}</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       <div className="safelight-top" />
       <div className="safelight-bottom" />
       <div className="grain-overlay" />

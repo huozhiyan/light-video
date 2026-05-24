@@ -133,6 +133,7 @@ export const useStore = create<AppStore>((set, get) => ({
     set({
       files: [...files, ...entries],
       activeView: activeView === 'dropzone' ? 'files' : activeView,
+      mobileSidebarOpen: entries.length > 0,
     });
 
     // Generate video thumbnails async

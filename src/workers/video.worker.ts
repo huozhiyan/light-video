@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { toBlobURL } from '@ffmpeg/util';
 import type { ProcessingSettings } from '../types';
 
 let ffmpeg: FFmpeg | null = null;
@@ -15,7 +15,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
 
   ffmpeg = new FFmpeg();
 
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 
   ffmpeg.on('progress', ({ progress }) => {
     self.postMessage({ type: 'ffmpeg-progress', progress: Math.round(progress * 100) });
@@ -30,7 +30,6 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 function qualityToCRF(quality: number): number {
-  // quality 100 → CRF 0 (best), quality 0 → CRF 51 (worst)
   return Math.round(((100 - quality) / 100) * 51);
 }
 
@@ -41,7 +40,6 @@ function buildFFmpegArgs(
 ): string[] {
   const args: string[] = ['-i', inputName];
 
-  // Video codec
   if (settings.codec === 'copy') {
     args.push('-c', 'copy');
   } else if (settings.codec === 'h265') {
@@ -52,36 +50,30 @@ function buildFFmpegArgs(
     args.push('-crf', String(qualityToCRF(settings.quality)));
     args.push('-b:v', '0');
   } else {
-    // h264 (default)
     args.push('-c:v', 'libx264');
     args.push('-crf', String(qualityToCRF(settings.quality)));
     args.push('-preset', 'medium');
   }
 
-  // Resolution
   if (settings.resolution) {
     const { width, height } = settings.resolution;
     args.push('-vf', `scale=${width}:${height}${settings.keepAspectRatio ? ':force_original_aspect_ratio=decrease' : ''}`);
   }
 
-  // FPS
   if (settings.fps) {
     args.push('-r', String(settings.fps));
   }
 
-  // Audio codec
   if (settings.audioCodec === 'copy') {
     args.push('-c:a', 'copy');
   } else if (settings.audioCodec === 'mp3') {
     args.push('-c:a', 'libmp3lame');
     args.push('-b:a', settings.audioBitrate);
   } else {
-    // aac (default)
     args.push('-c:a', 'aac');
     args.push('-b:a', settings.audioBitrate);
   }
 
-  // Format-specific
   const format = settings.format as string;
   if (format === 'gif') {
     args.push('-f', 'gif');
@@ -90,7 +82,6 @@ function buildFFmpegArgs(
     args.push('-vn');
   }
 
-  // Overwrite
   args.push('-y');
   args.push(outputName);
 
@@ -101,25 +92,32 @@ self.onmessage = async (e: MessageEvent<ProcessMessage>) => {
   const { file, settings } = e.data;
 
   try {
+    self.postMessage({ type: 'progress', progress: 0 });
+
+    // Read file as ArrayBuffer directly instead of using fetchFile,
+    // which can incorrectly treat blob URLs as network URLs in Workers
+    let fileData: ArrayBuffer;
+    try {
+      fileData = await file.arrayBuffer();
+    } catch {
+      throw new Error('Failed to read video file');
+    }
+
     const ff = await getFFmpeg();
 
-    const inputName = 'input.' + (file.name.split('.').pop() || 'mp4');
+    const inputExt = file.name.split('.').pop() || 'mp4';
     const outputExt = settings.format as string;
-    const outputName = 'output.' + outputExt;
+    const inputName = `input.${inputExt}`;
+    const outputName = `output.${outputExt}`;
 
-    // Write input file to FFmpeg virtual FS
-    self.postMessage({ type: 'progress', progress: 0 });
-    await ff.writeFile(inputName, await fetchFile(file));
+    await ff.writeFile(inputName, new Uint8Array(fileData));
 
-    // Build args
     const args = buildFFmpegArgs(inputName, outputName, settings);
     self.postMessage({ type: 'progress', progress: 10 });
 
-    // Execute
     await ff.exec(args);
     self.postMessage({ type: 'progress', progress: 85 });
 
-    // Read result
     const data = await ff.readFile(outputName);
     const mimeType =
       outputExt === 'm4a' ? 'audio/mp4' :
@@ -133,7 +131,6 @@ self.onmessage = async (e: MessageEvent<ProcessMessage>) => {
       `video/${outputExt}`;
     const blob = new Blob([data as BlobPart], { type: mimeType });
 
-    // Cleanup
     await ff.deleteFile(inputName);
     await ff.deleteFile(outputName);
 

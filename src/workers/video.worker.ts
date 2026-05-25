@@ -1,5 +1,4 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
 import type { ProcessingSettings } from '../types';
 
 let ffmpeg: FFmpeg | null = null;
@@ -10,20 +9,22 @@ interface ProcessMessage {
   settings: ProcessingSettings;
 }
 
+const CORE_JS = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js';
+const CORE_WASM = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm';
+
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg;
 
   ffmpeg = new FFmpeg();
 
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-
   ffmpeg.on('progress', ({ progress }) => {
     self.postMessage({ type: 'ffmpeg-progress', progress: Math.round(progress * 100) });
   });
 
+  // Use raw URLs instead of toBlobURL to avoid blob URL cross-context issues
   await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    coreURL: CORE_JS,
+    wasmURL: CORE_WASM,
   });
 
   return ffmpeg;

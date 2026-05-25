@@ -342,36 +342,48 @@ export const useStore = create<AppStore>((set, get) => ({
 
 async function generateVideoThumbnail(file: File): Promise<string | null> {
   return new Promise((resolve) => {
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-    video.muted = true;
-    video.playsInline = true;
-    const url = URL.createObjectURL(file);
+    try {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
 
-    video.onloadeddata = () => {
-      video.currentTime = 1;
-    };
+      let url: string | null = null;
+      const cleanup = () => { if (url) { URL.revokeObjectURL(url); url = null; } };
 
-    video.onseeked = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 320;
-      canvas.height = (video.videoHeight / video.videoWidth) * 320 || 180;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      } else {
-        resolve(null);
-      }
-      URL.revokeObjectURL(url);
-    };
+      const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
 
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
+      video.onloadeddata = () => { video.currentTime = 1; };
+
+      video.onseeked = () => {
+        clearTimeout(timer);
+        try {
+          const canvas = document.createElement('canvas');
+          const h = video.videoHeight || 180;
+          const w = video.videoWidth || 320;
+          canvas.width = Math.min(w, 640);
+          canvas.height = Math.min(h, 480);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+          } else {
+            resolve(null);
+          }
+        } catch {
+          resolve(null);
+        }
+        cleanup();
+      };
+
+      video.onerror = () => { clearTimeout(timer); cleanup(); resolve(null); };
+
+      url = URL.createObjectURL(file);
+      video.src = url;
+    } catch {
       resolve(null);
-    };
-
-    video.src = url;
+    }
   });
 }
 

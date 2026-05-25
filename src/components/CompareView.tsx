@@ -23,28 +23,38 @@ export function CompareView({ result }: Props) {
     return null;
   }, [originalFile]);
 
-  const onMouseMove = useCallback(
-    (e: MouseEvent) => {
+  const getClientX = useCallback((e: MouseEvent | TouchEvent) => {
+    if ('touches' in e) return e.touches[0].clientX;
+    return e.clientX;
+  }, []);
+
+  const onPointerMove = useCallback(
+    (e: MouseEvent | TouchEvent) => {
       if (!isDragging || !containerRef.current) return;
+      e.preventDefault();
       const rect = containerRef.current.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const x = ((getClientX(e) - rect.left) / rect.width) * 100;
       setSplit(Math.max(5, Math.min(95, x)));
     },
-    [isDragging]
+    [isDragging, getClientX]
   );
 
-  const onMouseUp = useCallback(() => setIsDragging(false), []);
+  const onPointerUp = useCallback(() => setIsDragging(false), []);
 
   useEffect(() => {
     if (isDragging) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('mousemove', onPointerMove as (e: Event) => void);
+      window.addEventListener('mouseup', onPointerUp);
+      window.addEventListener('touchmove', onPointerMove as (e: Event) => void, { passive: false });
+      window.addEventListener('touchend', onPointerUp);
       return () => {
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
+        window.removeEventListener('mousemove', onPointerMove as (e: Event) => void);
+        window.removeEventListener('mouseup', onPointerUp);
+        window.removeEventListener('touchmove', onPointerMove as (e: Event) => void);
+        window.removeEventListener('touchend', onPointerUp);
       };
     }
-  }, [isDragging, onMouseMove, onMouseUp]);
+  }, [isDragging, onPointerMove, onPointerUp]);
 
   const savings = ((1 - result.resultSize / result.originalSize) * 100).toFixed(1);
 
@@ -115,18 +125,20 @@ export function CompareView({ result }: Props) {
         {/* Draggable divider */}
         {result.type === 'image' && (
           <div
-            className="absolute top-0 bottom-0 w-0.5 cursor-col-resize z-10"
+            className="absolute top-0 bottom-0 w-0.5 cursor-col-resize z-10 touch-none"
             style={{ left: `${split}%`, background: 'var(--color-accent)', boxShadow: '0 0 8px rgba(244,157,55,0.5)' }}
             onMouseDown={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onTouchStart={(e) => { e.preventDefault(); setIsDragging(true); }}
           >
             <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full flex items-center justify-center"
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 md:w-7 md:h-7 rounded-full flex items-center justify-center"
               style={{
                 background: 'var(--color-accent)',
                 boxShadow: '0 0 12px rgba(244,157,55,0.4)',
               }}
             >
-              <GripVertical size={14} color="#0C0C0E" />
+              <GripVertical size={14} color="#0C0C0E" className="hidden md:block" />
+              <GripVertical size={18} color="#0C0C0E" className="md:hidden" />
             </div>
           </div>
         )}

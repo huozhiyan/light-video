@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   base: '/light-video/',
   plugins: [react(), tailwindcss()],
+  resolve: {
+    conditions: ['browser', 'import', 'module', 'default'],
+  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',

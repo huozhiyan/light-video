@@ -160,7 +160,7 @@ export function GuidePanel() {
       {/* Credits */}
       <motion.div
         variants={item}
-        className="mt-14 text-center flex flex-col items-center gap-3"
+        className="mt-24 text-center flex flex-col items-center gap-3"
       >
         <div
           className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full"

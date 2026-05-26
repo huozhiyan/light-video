@@ -160,7 +160,7 @@ export function GuidePanel() {
       {/* Credits */}
       <motion.div
         variants={item}
-        className="mt-14 text-center"
+        className="mt-14 text-center flex flex-col items-center gap-3"
       >
         <div
           className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full"
@@ -186,6 +186,15 @@ export function GuidePanel() {
             DeepSeek V4 Pro
           </span>
         </div>
+        <a
+          href="https://github.com/huozhiyan/light-video"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] tracking-wider transition-opacity hover:opacity-70"
+          style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', textDecoration: 'none' }}
+        >
+          github.com/huozhiyan/light-video
+        </a>
       </motion.div>
     </motion.div>
   );

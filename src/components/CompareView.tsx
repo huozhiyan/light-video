@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { GripVertical } from 'lucide-react';
 import type { ProcessingResult } from '../types';
@@ -16,12 +16,8 @@ export function CompareView({ result }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const files = useStore((s) => s.files);
-  const originalFile = files.find((f) => f.id === result.fileId)?.file;
-
-  const originalUrl = useMemo(() => {
-    if (originalFile) return URL.createObjectURL(originalFile);
-    return null;
-  }, [originalFile]);
+  // Reuse the thumbnail blob URL already created when the file was added, instead of creating a new one
+  const originalUrl = files.find((f) => f.id === result.fileId)?.thumbnail || null;
 
   const getClientX = useCallback((e: MouseEvent | TouchEvent) => {
     if ('touches' in e) return e.touches[0].clientX;
@@ -117,8 +113,28 @@ export function CompareView({ result }: Props) {
             </div>
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <video src={result.url} controls className="max-w-full max-h-full rounded" />
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+            {['mp4', 'webm'].includes(result.resultFormat) ? (
+              <video src={result.url} controls className="max-w-full max-h-full rounded" />
+            ) : (
+              <>
+                <p className="text-xs" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                  {result.resultFormat.toUpperCase()} 格式无法在浏览器中预览
+                </p>
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = result.url;
+                    a.download = result.fileName.replace(/\.[^.]+$/, '') + '_converted.' + result.resultFormat;
+                    a.click();
+                  }}
+                  className="px-3 py-1.5 rounded text-xs font-medium cursor-pointer"
+                  style={{ background: 'var(--color-accent)', color: '#0C0C0E', fontFamily: 'var(--font-mono)' }}
+                >
+                  下载文件
+                </button>
+              </>
+            )}
           </div>
         )}
 

@@ -23,7 +23,7 @@ export interface ProcessingSettings {
   preset: PresetName | null;
 }
 
-export type PresetName = 'web-optimized' | 'extreme-compress' | 'lossless' | 'gif-extract' | 'audio-extract';
+export type PresetName = 'turbo' | 'web-optimized' | 'extreme-compress' | 'lossless' | 'gif-extract' | 'audio-extract';
 
 export interface Preset {
   name: PresetName;

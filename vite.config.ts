@@ -2,11 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
-  base: '/light-video/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/light-video/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     conditions: ['browser', 'import', 'module', 'default'],
+  },
+  optimizeDeps: {
+    exclude: ['@ffmpeg/ffmpeg'],
   },
   server: {
     headers: {
@@ -17,4 +20,4 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
-})
+}))

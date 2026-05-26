@@ -1,9 +1,11 @@
 import { create } from 'zustand';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { getTranslation as i18n } from '../i18n';
 import type {
   MediaFile,
   ProcessingSettings,
   Task,
+  TaskStatus,
   ProcessingResult,
   ActiveView,
   ToastMessage,
@@ -50,6 +52,9 @@ let idCounter = 0;
 function uid(): string {
   return `${Date.now()}-${++idCounter}`;
 }
+
+// Cancellation token checked by processing loops
+let _cancelToken = false;
 
 interface AppStore {
   files: MediaFile[];
@@ -136,20 +141,6 @@ export const useStore = create<AppStore>((set, get) => ({
       mobileSidebarOpen: entries.length > 0,
     });
 
-    // Generate video thumbnails async
-    for (const entry of entries) {
-      if (entry.type === 'video') {
-        generateVideoThumbnail(entry.file).then((thumb) => {
-          if (thumb) {
-            set((state) => ({
-              files: state.files.map((f) =>
-                f.id === entry.id ? { ...f, thumbnail: thumb } : f
-              ),
-            }));
-          }
-        });
-      }
-    }
   },
 
   removeFile: (id) => {
@@ -188,16 +179,31 @@ export const useStore = create<AppStore>((set, get) => ({
   updateGlobalSettings: (s) =>
     set((state) => {
       const newGlobal = { ...state.globalSettings, ...s };
-      // Sync all settings changes to compatible files
+      const imageFmts = ['webp', 'jpeg', 'png', 'avif'];
+      const videoFmts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v', 'ogv', 'gif', 'm4a', 'mp3'];
+      // Sync settings changes, filtering type-incompatible fields
       const files = state.files.map((f) => {
-        const updates: Partial<ProcessingSettings> = { ...s };
-        // If format changed, check compatibility before syncing
+        const updates: Partial<ProcessingSettings> = {};
+        // Format: only sync if compatible with file type
         if (s.format) {
-          const isImageFmt = ['webp', 'jpeg', 'png', 'avif'].includes(s.format);
-          const isVideoFmt = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v', 'ogv', 'gif', 'm4a', 'mp3'].includes(s.format);
-          const compatible = (f.type === 'image' && isImageFmt) || (f.type === 'video' && isVideoFmt);
-          if (!compatible) delete updates.format;
+          const isImageFmt = imageFmts.includes(s.format);
+          const isVideoFmt = videoFmts.includes(s.format);
+          if ((f.type === 'image' && isImageFmt) || (f.type === 'video' && isVideoFmt)) {
+            updates.format = s.format;
+          }
         }
+        // Video-specific fields: only sync to video files
+        if (f.type === 'video') {
+          if (s.codec !== undefined) updates.codec = s.codec;
+          if (s.fps !== undefined) updates.fps = s.fps;
+          if (s.audioCodec !== undefined) updates.audioCodec = s.audioCodec;
+          if (s.audioBitrate !== undefined) updates.audioBitrate = s.audioBitrate;
+        }
+        // Shared fields: sync to all files
+        if (s.quality !== undefined) updates.quality = s.quality;
+        if (s.resolution !== undefined) updates.resolution = s.resolution;
+        if (s.keepAspectRatio !== undefined) updates.keepAspectRatio = s.keepAspectRatio;
+        if (s.preset !== undefined) updates.preset = s.preset;
         return { ...f, settings: { ...f.settings, ...updates } };
       });
       return { globalSettings: newGlobal, files };
@@ -205,12 +211,24 @@ export const useStore = create<AppStore>((set, get) => ({
 
   updateFileSettings: (id, s) =>
     set((state) => ({
-      files: state.files.map((f) =>
-        f.id === id ? { ...f, settings: { ...f.settings, ...s } } : f
-      ),
+      files: state.files.map((f) => {
+        if (f.id !== id) return f;
+        const merged = { ...f.settings, ...s };
+        // Validate format compatibility
+        const imageFmts = ['webp', 'jpeg', 'png', 'avif'];
+        const videoFmts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v', 'ogv', 'gif', 'm4a', 'mp3'];
+        if (f.type === 'image' && !imageFmts.includes(merged.format)) {
+          delete (merged as any).format;
+        }
+        if (f.type === 'video' && !videoFmts.includes(merged.format)) {
+          delete (merged as any).format;
+        }
+        return { ...f, settings: merged };
+      }),
     })),
 
   startProcessing: async () => {
+    _cancelToken = false;
     const { files } = get();
     if (files.length === 0) return;
 
@@ -259,6 +277,7 @@ export const useStore = create<AppStore>((set, get) => ({
       isProcessing: false,
       activeView: 'results',
     }));
+    _cancelToken = true;
   },
 
   downloadOne: (id) => {
@@ -340,53 +359,6 @@ export const useStore = create<AppStore>((set, get) => ({
   closeMobileSidebar: () => set({ mobileSidebarOpen: false }),
 }));
 
-async function generateVideoThumbnail(file: File): Promise<string | null> {
-  return new Promise((resolve) => {
-    try {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.muted = true;
-      video.playsInline = true;
-      video.crossOrigin = 'anonymous';
-
-      let url: string | null = null;
-      const cleanup = () => { if (url) { URL.revokeObjectURL(url); url = null; } };
-
-      const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
-
-      video.onloadeddata = () => { video.currentTime = 1; };
-
-      video.onseeked = () => {
-        clearTimeout(timer);
-        try {
-          const canvas = document.createElement('canvas');
-          const h = video.videoHeight || 180;
-          const w = video.videoWidth || 320;
-          canvas.width = Math.min(w, 640);
-          canvas.height = Math.min(h, 480);
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
-          } else {
-            resolve(null);
-          }
-        } catch {
-          resolve(null);
-        }
-        cleanup();
-      };
-
-      video.onerror = () => { clearTimeout(timer); cleanup(); resolve(null); };
-
-      url = URL.createObjectURL(file);
-      video.src = url;
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
 function getOutputFileName(result: ProcessingResult): string {
   const base = result.fileName.replace(/\.[^.]+$/, '');
   return `${base}_converted.${result.resultFormat}`;
@@ -406,6 +378,19 @@ async function processImagesInParallel(
     while (queue.length > 0 && !cancelled) {
       const item = queue.shift();
       if (!item) break;
+
+      // Skip incompatible formats for image processing
+      const imageFmts = ['webp', 'jpeg', 'png', 'avif'];
+      if (!imageFmts.includes(item.file.settings.format as string)) {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === item.task.id ? { ...t, status: 'error' as const, error: 'Format not supported for images' } : t
+          ),
+        }));
+        continue;
+      }
+
+      if (_cancelToken) break;
 
       set((state) => ({
         tasks: state.tasks.map((t) =>
@@ -445,6 +430,7 @@ async function processImagesInParallel(
           });
         });
 
+        if (_cancelToken) { worker?.terminate(); return; }
         const url = URL.createObjectURL(result.blob);
         set((state) => ({
           tasks: state.tasks.map((t) =>
@@ -499,90 +485,175 @@ async function processVideo(
   set: (typeof useStore)['setState'],
   _get: (typeof useStore)['getState']
 ): Promise<boolean> {
-  return new Promise((resolve) => {
+  const updateProgress = (status: TaskStatus, progress: number) => {
     set((state) => ({
       tasks: state.tasks.map((t) =>
-        t.id === task.id ? { ...t, status: 'loading-ffmpeg' as const, progress: 0 } : t
+        t.id === task.id ? { ...t, status, progress } : t
       ),
     }));
+  };
 
-    const worker = new Worker(
-      new URL('../workers/video.worker.ts', import.meta.url),
-      { type: 'module' }
-    );
+  const complete = (blob: Blob, format: string) => {
+    const url = URL.createObjectURL(blob);
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === task.id ? { ...t, status: 'completed' as const, progress: 100 } : t
+      ),
+      results: [
+        ...state.results,
+        {
+          taskId: task.id,
+          fileId: file.id,
+          fileName: file.file.name,
+          type: 'video' as const,
+          originalSize: file.file.size,
+          resultSize: blob.size,
+          originalFormat: file.file.name.split('.').pop() || '',
+          resultFormat: format,
+          blob,
+          url,
+        },
+      ],
+    }));
+  };
 
-    worker.onmessage = (e) => {
-      if (e.data.type === 'ffmpeg-progress') {
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === task.id
-              ? { ...t, status: 'loading-ffmpeg' as const, progress: e.data.progress }
-              : t
-          ),
-        }));
-      } else if (e.data.type === 'progress') {
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === task.id
-              ? { ...t, status: 'processing' as const, progress: e.data.progress }
-              : t
-          ),
-        }));
-      } else if (e.data.type === 'complete') {
-        const url = URL.createObjectURL(e.data.blob);
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === task.id
-              ? { ...t, status: 'completed' as const, progress: 100 }
-              : t
-          ),
-          results: [
-            ...state.results,
-            {
-              taskId: task.id,
-              fileId: file.id,
-              fileName: file.file.name,
-              type: 'video' as const,
-              originalSize: file.file.size,
-              resultSize: e.data.blob.size,
-              originalFormat: file.file.name.split('.').pop() || '',
-              resultFormat: e.data.format,
-              blob: e.data.blob,
-              url,
-            },
-          ],
-        }));
-        worker.terminate();
-        resolve(true);
-      } else if (e.data.type === 'error') {
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === task.id
-              ? { ...t, status: 'error' as const, error: e.data.error }
-              : t
-          ),
-        }));
-        worker.terminate();
-        resolve(true);
-      }
-    };
+  const fail = (error: string) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === task.id ? { ...t, status: 'error' as const, error } : t
+      ),
+    }));
+  };
 
-    worker.onerror = () => {
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === task.id
-            ? { ...t, status: 'error' as const, error: i18n('msg.workerError', _get().locale) }
-            : t
-        ),
-      }));
-      worker.terminate();
-      resolve(true);
-    };
+  try {
+    // Validate: video processing only supports video output formats
+    const videoFmts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v', 'ogv', 'gif', 'm4a', 'mp3'];
+    if (!videoFmts.includes(file.settings.format as string)) {
+      fail(`Video output format "${file.settings.format}" is not supported`);
+      return true;
+    }
 
-    worker.postMessage({
-      type: 'process',
-      file: file.file,
-      settings: file.settings,
+    console.log('[Video] Starting processing for:', file.file.name);
+    updateProgress('loading-ffmpeg', 0);
+
+    const coreURL = new URL('/ffmpeg/ffmpeg-core.js', import.meta.url).href;
+    const wasmURL = new URL('/ffmpeg/ffmpeg-core.wasm', import.meta.url).href;
+    console.log('[Video] Core URLs:', { coreURL, wasmURL });
+
+    const ff = new FFmpeg();
+    console.log('[Video] FFmpeg instance created');
+
+    // Capture FFmpeg internal logs for debugging
+    ff.on('log', ({ message }: { message: string }) => {
+      console.log('[FFmpeg]', message);
     });
-  });
+
+    let isExecing = false;
+    ff.on('progress', ({ progress }: { progress: number }) => {
+      const pct = Math.round(progress * 100);
+      if (isExecing) {
+        updateProgress('processing', 10 + Math.round(progress * 75));
+      } else {
+        updateProgress('loading-ffmpeg', Math.min(pct, 4));
+      }
+    });
+
+    console.log('[Video] Loading FFmpeg...');
+    await ff.load({ coreURL, wasmURL });
+    console.log('[Video] FFmpeg loaded');
+    updateProgress('processing', 5);
+
+    console.log('[Video] Reading file...');
+    const fileData = new Uint8Array(await file.file.arrayBuffer());
+    console.log('[Video] File read, size:', fileData.length);
+
+    const inputExt = file.file.name.split('.').pop()?.toLowerCase() || 'mp4';
+    const outputExt = (file.settings.format as string).toLowerCase();
+    const inputName = `input.${inputExt}`;
+    const outputName = `output.${outputExt}`;
+
+    await ff.writeFile(inputName, fileData);
+    console.log('[Video] File written to FS');
+    updateProgress('processing', 10);
+
+    // Build args
+    isExecing = true;
+    const settings = file.settings;
+    const args: string[] = ['-i', inputName];
+
+    const fmt = settings.format as string;
+
+    if (fmt === 'gif') {
+      // GIF needs palette-based encoding, not standard codecs
+      const fps = settings.fps || 10;
+      const w = settings.resolution?.width || 480;
+      const h = settings.resolution?.height || -2;
+      args.push(
+        '-an', '-map', '0:v:0',
+        '-vf', `fps=${fps},scale=w=${w}:h=${h}:force_original_aspect_ratio=decrease:force_divisible_by=2,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer`,
+        '-loop', '0'
+      );
+    } else {
+      // Standard video/audio encoding
+      const isCopy = settings.codec === 'copy';
+      if (isCopy) {
+        args.push('-c:v', 'copy', '-c:a', 'copy');
+      } else if (settings.codec === 'h265') {
+        args.push('-c:v', 'libx265', '-crf', String(Math.round(((100 - settings.quality) / 100) * 51)), '-preset', 'ultrafast');
+      } else if (settings.codec === 'vp9') {
+        args.push('-c:v', 'libvpx-vp9', '-crf', String(Math.round(((100 - settings.quality) / 100) * 51)), '-b:v', '0', '-deadline', 'realtime', '-cpu-used', '8');
+      } else {
+        args.push('-c:v', 'libx264', '-crf', String(Math.round(((100 - settings.quality) / 100) * 51)), '-preset', 'ultrafast', '-tune', 'fastdecode');
+      }
+
+      // Stream copy doesn't support filtering (vf, fps)
+      if (!isCopy) {
+        if (settings.resolution) {
+          const { width, height } = settings.resolution;
+          if (settings.keepAspectRatio) {
+            args.push('-vf', `scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease:force_divisible_by=2`);
+          } else {
+            args.push('-vf', `scale=w=${width}:h=${height}:force_divisible_by=2`);
+          }
+        }
+        if (settings.fps) args.push('-r', String(settings.fps));
+
+        if (settings.audioCodec === 'mp3') {
+          args.push('-c:a', 'libmp3lame', '-b:a', settings.audioBitrate);
+        } else if (settings.audioCodec !== 'copy') {
+          args.push('-c:a', 'aac', '-b:a', settings.audioBitrate);
+        }
+      }
+
+      if (fmt === 'm4a' || fmt === 'mp3') { args.push('-vn'); }
+    }
+
+    args.push('-y', outputName);
+
+    if (_cancelToken) { fail(i18n('msg.cancelled', _get().locale)); return true; }
+    console.log('[Video] Running ffmpeg with args:', args.join(' '));
+    await ff.exec(args);
+    console.log('[Video] FFmpeg exec complete');
+    updateProgress('processing', 85);
+
+    const data = await ff.readFile(outputName);
+    console.log('[Video] Output read, size:', (data as any).length ?? (data as any).byteLength);
+    const mimeMap: Record<string, string> = {
+      m4a: 'audio/mp4', mp3: 'audio/mpeg', gif: 'image/gif',
+      m4v: 'video/mp4', ogv: 'video/ogg', wmv: 'video/x-ms-wmv',
+      flv: 'video/x-flv', mkv: 'video/x-matroska',
+    };
+    const blob = new Blob([data as BlobPart], { type: mimeMap[outputExt] || `video/${outputExt}` });
+
+    await ff.deleteFile(inputName);
+    await ff.deleteFile(outputName);
+    console.log('[Video] Processing complete, output size:', blob.size);
+
+    complete(blob, outputExt);
+    return true;
+  } catch (err) {
+    console.error('[Video] Processing failed:', err);
+    fail(err instanceof Error ? err.message : 'Video processing failed');
+    return true;
+  }
 }

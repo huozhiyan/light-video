@@ -3,18 +3,17 @@ import { useStore } from '../store/useStore';
 import { useI18n } from '../i18n';
 import { CompareView } from './CompareView';
 import { DownloadBar } from './DownloadBar';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, AlertTriangle } from 'lucide-react';
 
 export function ResultPanel() {
   const { t } = useI18n();
   const results = useStore((s) => s.results);
+  const tasks = useStore((s) => s.tasks);
   const clearResults = useStore((s) => s.clearResults);
-
-  if (results.length === 0) return null;
 
   const totalOriginal = results.reduce((s, r) => s + r.originalSize, 0);
   const totalResult = results.reduce((s, r) => s + r.resultSize, 0);
-  const savings = ((1 - totalResult / totalOriginal) * 100).toFixed(1);
+  const savings = results.length > 0 ? ((1 - totalResult / totalOriginal) * 100).toFixed(1) : '0';
 
   return (
     <motion.div
@@ -30,9 +29,17 @@ export function ResultPanel() {
               {t('result.title')}
             </h2>
             <p className="text-xs" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              {t('result.filesProcessed')} {results.length} {t('download.files')}
-              <span className="mx-2" style={{ color: 'var(--color-border)' }}>|</span>
-              <span style={{ color: 'var(--color-success)' }}>{t('result.saved')} {savings}%</span>
+              {results.length > 0 ? (
+                <>{t('result.filesProcessed')} {results.length} {t('download.files')}
+                  <span className="mx-2" style={{ color: 'var(--color-border)' }}>|</span>
+                  <span style={{ color: 'var(--color-success)' }}>{t('result.saved')} {savings}%</span>
+                </>
+              ) : (
+                <span style={{ color: 'var(--color-error)' }}>
+                  <AlertTriangle size={12} className="inline mr-1" />
+                  {t('result.allFailed')}
+                </span>
+              )}
             </p>
           </div>
           <button
@@ -44,15 +51,32 @@ export function ResultPanel() {
           </button>
         </div>
 
+        {/* Error list */}
+        {results.length === 0 && tasks.some(t => t.status === 'error') && (
+          <div className="mb-6 flex flex-col gap-2">
+            {tasks.filter(x => x.status === 'error').map(task => (
+              <div
+                key={task.id}
+                className="px-4 py-3 rounded-lg text-xs"
+                style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-error)', color: 'var(--color-error)', fontFamily: 'var(--font-mono)' }}
+              >
+                {task.fileName}: {task.error || 'Error'}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Compare views */}
-        <div className="flex flex-col gap-6">
-          {results.map((result) => (
-            <CompareView key={result.taskId} result={result} />
-          ))}
-        </div>
+        {results.length > 0 && (
+          <div className="flex flex-col gap-6">
+            {results.map((result) => (
+              <CompareView key={result.taskId} result={result} />
+            ))}
+          </div>
+        )}
 
         {/* Download bar */}
-        <DownloadBar />
+        {results.length > 0 && <DownloadBar />}
       </div>
     </motion.div>
   );

@@ -19,6 +19,9 @@ const VIDEO_FORMATS: { value: OutputFormat; label: string }[] = [
   { value: 'wmv', label: 'WMV' },
   { value: 'm4v', label: 'M4V' },
   { value: 'ogv', label: 'OGV' },
+  { value: 'gif', label: 'GIF' },
+  { value: 'm4a', label: 'M4A' },
+  { value: 'mp3', label: 'MP3' },
 ];
 
 export function FormatSelector() {

@@ -52,7 +52,7 @@ export function FileGrid() {
               const input = document.createElement('input');
               input.type = 'file';
               input.multiple = true;
-              input.accept = 'image/*,video/*,.mkv,.flv,.wmv,.m4v,.ogv';
+              input.accept = 'image/*,video/*,.mkv,.flv,.wmv,.m4v,.ogv,.3gp';
               input.onchange = (ev) => {
                 const fileList = (ev.target as HTMLInputElement).files;
                 if (fileList) addFiles(Array.from(fileList));

@@ -34,6 +34,8 @@ const dict: Record<string, { zh: string; en: string }> = {
   'quality.avifHint': { zh: '建议画质 40-65%，AVIF 在该范围内体积更小且视觉无损', en: 'Recommended 40-65% — AVIF achieves smaller sizes with visually lossless quality in this range' },
 
   // Presets
+  'preset.turbo': { zh: '极速模式', en: 'Turbo' },
+  'preset.turboDesc': { zh: '360p · 超快编码 · 秒级出片', en: '360p · ultrafast · seconds' },
   'preset.webOptimized': { zh: 'Web 优化', en: 'Web Ready' },
   'preset.extremeCompress': { zh: '极致压缩', en: 'Max Crush' },
   'preset.lossless': { zh: '无损转换', en: 'Lossless' },
@@ -59,6 +61,7 @@ const dict: Record<string, { zh: string; en: string }> = {
   'result.title': { zh: '处理结果', en: 'Results' },
   'result.filesProcessed': { zh: '已处理', en: 'processed' },
   'result.saved': { zh: '节省', en: 'saved' },
+  'result.allFailed': { zh: '全部任务处理失败，请检查文件格式后重试', en: 'All tasks failed — check file format and retry' },
   'result.newBatch': { zh: '新的批次', en: 'New Batch' },
 
   // CompareView

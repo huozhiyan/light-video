@@ -156,6 +156,37 @@ export function GuidePanel() {
           );
         })}
       </div>
+
+      {/* Credits */}
+      <motion.div
+        variants={item}
+        className="mt-14 text-center"
+      >
+        <div
+          className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full"
+          style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <span className="text-[11px] tracking-wider" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-text-secondary)' }}>
+            Author
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--color-accent)', fontFamily: 'var(--font-mono)' }}>
+            huozhiyan
+          </span>
+          <span className="w-px h-3" style={{ background: 'var(--color-border)' }} />
+          <span className="text-[11px] tracking-wider" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-text-secondary)' }}>
+            Power by
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+            Claude Code
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', opacity: 0.5 }}>
+            &
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+            DeepSeek V4 Pro
+          </span>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

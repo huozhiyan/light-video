@@ -1,92 +1,106 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code（claude.ai/code）在此仓库工作时提供指导。
 
-## Commands
+## 常用命令
 
 ```bash
-npm run dev      # Start dev server (http://localhost:5173)
-npm run build    # TypeScript check + Vite production build
-npm run deploy   # Build + push dist/ to gh-pages branch
-npm run preview  # Preview production build locally
+npm run dev      # 启动开发服务器 (http://localhost:5173)
+npm run build    # TypeScript 检查 + Vite 生产构建
+npm run deploy   # 构建并推送 dist/ 到 gh-pages 分支
+npm run preview  # 本地预览生产构建
 ```
 
-## Architecture
+## 架构概览
 
-### Tech Stack
+### 技术栈
 React 19 + TypeScript + Vite 5 + Tailwind CSS 4 + Zustand + Framer Motion + FFmpeg.wasm
 
-### Key Architecture Decisions
+### 关键架构决策
 
-**Video processing runs on the main thread, NOT in a Web Worker.**
-FFmpeg.wasm v0.12.x creates its own internal Worker. Nesting that inside our Worker caused "Script at CDN URL cannot be accessed from origin" errors because browser security blocks cross-origin Worker creation. Solution: import FFmpeg from npm (`import { FFmpeg } from '@ffmpeg/ffmpeg'`), let Vite bundle the class and its worker.js. The auto-bundled worker.js is same-origin, so Worker creation succeeds.
+**视频处理在主线程运行，而非 Web Worker。**
+FFmpeg.wasm v0.12.x 内部会自行创建 Worker。如果我们在自己的 Worker 中再创建 FFmpeg 实例，会出现「Worker 嵌套 Worker」的情况，浏览器安全策略会阻止跨域 Worker 创建，报错 `cannot be accessed from origin`。解决方案：从 npm 直接导入 FFmpeg（`import { FFmpeg } from '@ffmpeg/ffmpeg'`），让 Vite 打包其 JS 类和 worker.js。Vite 打包后的 worker.js 是同源的，Worker 创建成功。
 
-**FFmpeg core files are served from `public/ffmpeg/`** (gitignored, downloaded at setup).
-The WASM binary (~32MB) and JS glue (~112KB) must be same-origin. Downloaded from `cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.9/dist/esm/` into `public/ffmpeg/`. Vite copies public/ to dist/ automatically.
+**FFmpeg 核心文件放在 `public/ffmpeg/`**（已 gitignore，需在初始化时下载）。
+WASM 二进制（约 32MB）和 JS 胶水代码（约 112KB）必须同源。从 `cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.9/dist/esm/` 下载到 `public/ffmpeg/`。Vite 构建时自动将 public/ 复制到 dist/。
 
-**Image processing uses Canvas API in Web Workers** (`src/workers/image.worker.ts`).
-Workers are created per-file, process in parallel (thread pool = `navigator.hardwareConcurrency - 1`).
+**图片处理使用 Canvas API 在 Web Worker 中运行**（`src/workers/image.worker.ts`）。
+每个文件创建一个 Worker 实例，线程池大小 = `navigator.hardwareConcurrency - 1`。
 
-**`resolve.conditions` must exclude `'node'` for browser-only packages.**
-`@ffmpeg/ffmpeg` package.json has `"node": "./dist/esm/empty.mjs"` which throws on import. Vite config must set `resolve.conditions: ['browser', 'import', 'module', 'default']` to match the browser ESM build.
+**`resolve.conditions` 必须排除 `'node'` 条件。**
+`@ffmpeg/ffmpeg` 的 package.json 中 `"node": "./dist/esm/empty.mjs"` 指向一个空桩文件（直接 throw Error）。Vite 配置必须显式设置 `resolve.conditions: ['browser', 'import', 'module', 'default']` 才能匹配到浏览器 ESM 版本。
 
-### State Management (Zustand)
+### 状态管理（Zustand）
 
-**Global vs per-file settings sync is selective by type:**
-- `updateGlobalSettings()` syncs only compatible fields: `codec/fps/audioCodec/audioBitrate` → video files only; `quality/resolution` → all files; `format` → checked for type compatibility
-- `updateFileSettings()` validates format compatibility before applying
-- Processing reads `file.settings`, not `globalSettings` — changes must be synced before processing starts
+**全局设置与单文件设置的同步是按类型过滤的：**
+- `updateGlobalSettings()` 只同步兼容字段：`codec/fps/audioCodec/audioBitrate` 仅同步到视频文件；`quality/resolution` 同步到所有文件；`format` 检查类型兼容后同步
+- `updateFileSettings()` 在合并前校验格式兼容性
+- 处理时读取的是 `file.settings`，不是 `globalSettings`——点击开始处理前，全局设置的变更必须先同步到各文件
 
-**Cancellation uses a module-level `_cancelToken` flag** checked in `processImagesInParallel` worker loop and `processVideo` before exec. `cancelAll()` sets the flag and marks pending tasks as errors.
+**取消操作使用模块级 `_cancelToken` 标记。**
+`processImagesInParallel` 的 worker 循环和 `processVideo` 的 exec 前都会检查该标记。`cancelAll()` 设置标记并将所有未完成的任务标记为错误。
 
-### FFmpeg Argument Construction
+### FFmpeg 参数构建
 
-**GIF output requires a completely different code path:**
-- No standard video codec (libx264/h265) — GIF muxer rejects them
-- Must use palette-based encoding: `-vf "fps=N,scale=...,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"`
-- Must force single video stream: `-map 0:v:0 -an`
-- No audio codec args allowed
+**GIF 输出需要完全不同的代码路径：**
+- 不能用标准视频编码器（libx264/h265）——GIF 封装器会拒绝
+- 必须使用基于调色板的编码：`-vf "fps=N,scale=...,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"`
+- 必须强制单视频流映射：`-map 0:v:0 -an`
+- 不能有音频编码参数
 
-**Resolution scaling must force even dimensions:**
-`force_divisible_by=2` on the scale filter prevents H.264 encoder errors when auto-rotation or aspect-ratio scaling produces odd pixel dimensions (e.g., 203x360).
+**分辨率缩放必须强制偶数尺寸：**
+scale 滤镜加 `force_divisible_by=2`。竖拍视频的 rotation 元数据会导致自动旋转，配合 `force_original_aspect_ratio=decrease` 可能产生奇数像素（如 203x360），H.264 编码器拒绝奇数尺寸。
 
-**Sream copy (`-c:v copy -c:a copy`) cannot use `-vf` or `-r`** — skip filters and fps entirely.
+**流复制（`-c:v copy -c:a copy`）不能同时使用 `-vf` 或 `-r`**——跳过所有滤镜和帧率设置。
 
-### Blob URL Lifecycle
+### Blob URL 生命周期
 
-**Never create blob URLs in useMemo with useEffect cleanup** — React StrictMode double-invokes the cleanup, revoking the URL before the component renders. Instead:
-- Reuse existing blob URLs (e.g., the `thumbnail` URL created when files are added)
-- Or use useRef to track and manually manage the lifecycle in the useMemo itself
+**绝对不要在 useMemo 中创建 blob URL 再用 useEffect 清理。**
+React StrictMode 会双重调用 useEffect 的清理函数，导致 blob URL 在组件首次渲染完成前就被撤销。正确做法：
+- 复用已有的 blob URL（如文件上传时创建的 `thumbnail` URL）
+- 或者用 useRef 手动管理生命周期，在 useMemo 内部撤销旧 URL 再创建新的
 
-**`URL.createObjectURL(file)` for File objects** is valid until explicitly revoked. The File's underlying data persists as long as the File reference exists.
+**`URL.createObjectURL(file)` 对 File 对象创建的 blob URL**，只要 File 引用存在就持续有效，不需要额外处理。
 
-### Theming
+### 主题
 
-CSS `data-theme="dark|light"` attribute on `<html>`. All components use `var(--color-xxx)` for colors. Theme toggle in Header sets the attribute + persists to localStorage. Initial value set in `main.tsx` before React mounts to avoid flash.
+CSS `data-theme="dark|light"` 属性挂载在 `<html>` 上。所有组件通过 `var(--color-xxx)` 引用颜色。Header 中的主题切换按钮设置属性并持久化到 localStorage。初始值在 `main.tsx` 中设置，在 React 挂载前完成以避免闪烁。
 
-### i18n
+### 国际化
 
-Flat key-value dictionary in `src/i18n.ts` with `zh`/`en` translations. `useI18n()` hook returns `{ t, locale }`. Locale persisted to localStorage. Store-internal messages use `getTranslation(key, locale)`.
+`src/i18n.ts` 中扁平的 key-value 字典，包含 `zh`/`en` 两种语言。`useI18n()` hook 返回 `{ t, locale }`。语言选择持久化到 localStorage。Store 中非组件代码使用 `getTranslation(key, locale)`。
 
-### Mobile Layout
+### 移动端布局
 
-Sidebar becomes a slide-in overlay on mobile (`<md`). Toggle via Header hamburger menu or floating action button. Uses framer-motion AnimatePresence for enter/exit animations. CompareView touch drag uses both `mousemove` and `touchmove` events.
+侧边栏在手机端（`<md`）变成从左侧滑出的浮层面板。通过 Header 的汉堡菜单或右下角的浮动操作按钮触发。使用 framer-motion 的 AnimatePresence 处理进入/退出动画。CompareView 的拖拽分割线同时支持 `mousemove` 和 `touchmove` 事件。
 
-### Git Notes
+### Git 注意事项
 
-- `public/ffmpeg/` is gitignored (32MB WASM)
-- `*.MP4`, `*.mov`, `*.MOV` are gitignored (test files should not be committed)
-- `.claude/` is gitignored
-- GitHub Pages deploys from `gh-pages` branch via `npm run deploy`
+- `public/ffmpeg/` 已 gitignore（32MB WASM 文件）
+- `*.MP4`, `*.mov`, `*.MOV` 已 gitignore（测试文件不应提交）
+- `.claude/` 已 gitignore
+- GitHub Pages 通过 `gh-pages` 分支部署，`npm run deploy` 一键上线
 
-### Common Pitfalls Fixed
+### 常见 Bug 速查表
 
-| Symptom | Root Cause | Fix |
+| 现象 | 根因 | 修复 |
 |---|---|---|
-| Video processing hangs at "loading engine" | `@ffmpeg/ffmpeg` node export matched before browser export | `resolve.conditions` without `'node'` |
-| Cross-origin Worker error | FFmpeg creates internal Worker from CDN URL | Import from npm, let Vite bundle worker.js |
-| GIF output always fails | libx264 codec + audio stream in GIF container | Separate GIF code path with palette filter |
-| Output file 0 bytes | Rotation metadata produces odd dimensions | `force_divisible_by=2` |
-| Progress stuck at 99% | Progress callback overwrites exec status | Separate `isExecing` flag for correct status mapping |
-| CompareView original image blank | StrictMode double-revokes blob URL | Reuse thumbnail URLs instead of creating new ones |
-| cancelAll doesn't stop processing | No cancel mechanism in async loops | Module-level `_cancelToken` flag |
+| 视频处理卡在"加载引擎" | `@ffmpeg/ffmpeg` 的 node 导出在浏览器条件之前被匹配 | `resolve.conditions` 排除 `'node'` |
+| 跨域 Worker 报错 | FFmpeg 从 CDN URL 创建内部 Worker | 从 npm 导入，由 Vite 打包 worker.js |
+| GIF 输出始终失败 | libx264 编码器 + 音频流被写入 GIF 容器 | GIF 独立代码路径，调色板滤镜 |
+| 输出文件 0 字节 | 旋转元数据导致缩放后尺寸为奇数 | scale 滤镜加 `force_divisible_by=2` |
+| 进度条卡在 99% | 进度回调覆盖了 exec 状态 | 用 `isExecing` 标记区分加载/编码阶段 |
+| 对比视图原始图片空白 | StrictMode 双重调用清理函数撤销 blob URL | 复用 thumbnail 已有 URL，不再新建 |
+| cancelAll 无法停止处理 | 异步循环中没有取消检测机制 | 模块级 `_cancelToken` 标记 |
+| 竖拍视频转换失败 | iPhone 的 rotation -90° 元数据 + aspect ratio 缩放 | `force_divisible_by=2` + `force_original_aspect_ratio=decrease` |
+
+### 新增格式支持清单
+
+添加新视频/图片输出格式时，需要同步更新的位置：
+1. `src/types/index.ts` — `VideoFormat` / `ImageFormat` 类型联合
+2. `src/components/FormatSelector.tsx` — `VIDEO_FORMATS` / `IMAGE_FORMATS` 列表
+3. `src/store/useStore.ts` — 格式兼容检查列表（至少 3 处：`updateGlobalSettings`、`updateFileSettings`、`addFiles`）
+4. `src/workers/video.worker.ts`（如仍使用）或 `processVideo` 函数 — MIME 类型映射
+5. `src/workers/image.worker.ts` — `FORMAT_MIME` 映射
+6. `src/components/DropZone.tsx` + `FileGrid.tsx` — accept 扩展名列表
+7. `src/i18n.ts` — 格式名翻译 key
